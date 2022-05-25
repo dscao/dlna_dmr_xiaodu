@@ -47,7 +47,7 @@
                     "browse_unfiltered": "Show incompatible media when browsing",
                     "callback_url_override": "Event listener callback URL",
                     "listen_port": "Event listener port (random if not set)",
-                    "poll_availability": "Poll for device availability"
+                    "poll_availability": "Turn off polling for device availability (Do not select this option if the small speakers, etc. are not always turned on)"
                 },
                 "title": "DLNA Digital Media Renderer configuration"
             }

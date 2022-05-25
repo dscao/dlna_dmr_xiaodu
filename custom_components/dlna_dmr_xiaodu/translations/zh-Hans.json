@@ -43,10 +43,10 @@
         "step": {
             "init": {
                 "data": {
+					"browse_unfiltered": "浏览时显示不兼容的媒体",
                     "callback_url_override": "\u4e8b\u4ef6\u76d1\u542c\u5668\u7684\u56de\u8c03 URL",
                     "listen_port": "\u4e8b\u4ef6\u76d1\u542c\u5668\u7aef\u53e3\uff08\u5982\u4e0d\u6307\u5b9a\u5219\u968f\u673a\u7aef\u53e3\u53f7\uff09",
-                    "poll_availability": "\u8f6e\u8be2\u8bbe\u5907\u53ef\u7528\u6027",
-					"browse_unfiltered": "浏览时显示不兼容的媒体"
+                    "poll_availability": "关闭轮询设备可用性(小度音箱等不是一直开机的请不要选中此项)"
                 },
                 "title": "DLNA \u6570\u5b57\u5a92\u4f53\u6e32\u67d3\u5668\u914d\u7f6e"
             }

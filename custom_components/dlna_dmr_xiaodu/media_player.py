@@ -335,14 +335,15 @@ class DlnaDmrEntity(MediaPlayerEntity):
             event_handler = await domain_data.async_get_event_notifier(
                 self._event_addr, self.hass
             )
+            _LOGGER.debug("Device self._event_addr: %r", self._event_addr)
 
             # Create profile wrapper
             self._device = DmrDevice(upnp_device, event_handler)
 
             self.location = location
 
-            # Subscribe to event notifications  小讯R1不订阅
-            if self._device.manufacturer != "Amlogic Corporation":            
+            # Subscribe to event notifications
+            if self._device.manufacturer != "Amlogic Corporation":   #小讯R1音箱app常开dlna不支持          
                 try:
                     self._device.on_event = self._on_event
                     await self._device.async_subscribe_services(auto_resubscribe=True)
@@ -417,16 +418,20 @@ class DlnaDmrEntity(MediaPlayerEntity):
     async def async_update(self) -> None:
         """Retrieve the latest data."""
         if not self._device:
-            if not self.poll_availability:
+            if self.poll_availability:  #这里改为默认轮询设备，小度关机后再开就一定要轮询，否则实体变成不可用。
                 return
             try:
                 await self._device_connect(self.location)
             except UpnpError:
                 return
 
-        assert self._device is not None
+        assert self._device is not None        
+        
 
+        
         try:
+            if self._device.manufacturer == "Amlogic Corporation": #小讯R1音箱app常开dlna不支持
+                return
             do_ping = self.poll_availability or self.check_available
             await self._device.async_update(do_ping=do_ping)
         except UpnpError as err:
@@ -454,8 +459,8 @@ class DlnaDmrEntity(MediaPlayerEntity):
                     state_variable.name == "TransportState"
                     and state_variable.value
                     in (TransportState.PLAYING, TransportState.PAUSED_PLAYBACK)
-                ):
-                    force_refresh = True
+                ):               
+                    force_refresh = True        
 
         self.async_schedule_update_ha_state(force_refresh)
 
@@ -485,6 +490,11 @@ class DlnaDmrEntity(MediaPlayerEntity):
             TransportState.PLAYING,
             TransportState.TRANSITIONING,
         ):
+            # Fix xiaodu can not stop automatically 但因小度不支持停止操作，并不能将状态变更为待机,，放弃修改。
+            # _LOGGER.debug("manufacturer: %s, media_duration:%s, media_position:%s", self._device.manufacturer, self.media_duration, self.media_position)
+            # if self._device.manufacturer == "DuerOS" and self.media_duration != None and self.media_duration == self.media_position:
+                # self.async_media_stop()
+
             return STATE_PLAYING
         if self._device.transport_state in (
             TransportState.PAUSED_PLAYBACK,
@@ -493,7 +503,7 @@ class DlnaDmrEntity(MediaPlayerEntity):
             return STATE_PAUSED
         if self._device.transport_state == TransportState.VENDOR_DEFINED:
             # Unable to map this state to anything reasonable, so it's "Unknown"
-            return None
+            return None        
 
         return STATE_IDLE
 
@@ -649,16 +659,16 @@ class DlnaDmrEntity(MediaPlayerEntity):
             )
 
         # Stop current playing media
-        if self._device.can_stop:
+        if self._device.can_stop and self._device.manufacturer != "Amlogic Corporation": #小讯R1音箱app常开dlna使用stop命令报错
             await self.async_media_stop() 
         
         # Queue media
         await self._device.async_set_transport_uri(media_id, title, didl_metadata)
 
         # If already playing, or don't want to autoplay, no need to call Play
-        # autoplay = extra.get("autoplay", True)
-        #if self._device.transport_state == TransportState.PLAYING or not autoplay:
-        #    return
+        autoplay = extra.get("autoplay", True)
+        if (self._device.manufacturer != "DuerOS" and self._device.transport_state == TransportState.PLAYING) or not autoplay:
+           return
 
         # Play it
         await self._device.async_wait_for_can_play()
@@ -801,7 +811,9 @@ class DlnaDmrEntity(MediaPlayerEntity):
         if not self._device or not self._device.sink_protocol_info:
             # Nothing is specified by the renderer, so show everything
             _LOGGER.debug("Get content filter with no device or sink protocol info")
-            return lambda _: True
+            #return lambda _: True
+            return lambda item: item.media_content_type.startswith("audio/")
+
 
         _LOGGER.debug("Get content filter for %s", self._device.sink_protocol_info)
         if self._device.sink_protocol_info[0] == "*":
@@ -839,7 +851,7 @@ class DlnaDmrEntity(MediaPlayerEntity):
     @property
     def media_image_url(self) -> str | None:
         """Image url of current playing media."""
-        if not self._device:
+        if not self._device or self._device.manufacturer == "Amlogic Corporation"  or self._device.manufacturer == "DuerOS":
             return None
         return self._device.media_image_url
 
