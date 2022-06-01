@@ -92,9 +92,10 @@ def catch_request_errors(
             return None
         try:
             return await func(self, *args, **kwargs)
-        except UpnpError as err:
+        #except UpnpError as err:
+        except:
             self.check_available = True
-            _LOGGER.error("Error during call %s: %r", func.__name__, err)
+            #_LOGGER.error("Error during call %s: %r", func.__name__, err)
         return None
 
     return wrapper
@@ -400,25 +401,26 @@ class DlnaDmrEntity(MediaPlayerEntity):
 
         Also call when removing this entity from hass to clean up connections.
         """
-        async with self._device_lock:
-            if not self._device:
-                _LOGGER.debug("Disconnecting from device that's not connected")
-                return
+        if self._device.manufacturer != "Amlogic Corporation":   #小讯R1音箱app常开dlna不支持
+            async with self._device_lock:
+                if not self._device:
+                    _LOGGER.debug("Disconnecting from device that's not connected")
+                    return
 
-            _LOGGER.debug("Disconnecting from %s", self._device.name)
+                _LOGGER.debug("Disconnecting from %s", self._device.name)
 
-            self._device.on_event = None
-            old_device = self._device
-            self._device = None
-            await old_device.async_unsubscribe_services()
+                self._device.on_event = None
+                old_device = self._device
+                self._device = None
+                await old_device.async_unsubscribe_services()
 
-        domain_data = get_domain_data(self.hass)
-        await domain_data.async_release_event_notifier(self._event_addr)
+            domain_data = get_domain_data(self.hass)
+            await domain_data.async_release_event_notifier(self._event_addr)
 
     async def async_update(self) -> None:
         """Retrieve the latest data."""
         if not self._device:
-            if self.poll_availability:  #这里改为默认轮询设备，小度关机后再开就一定要轮询，否则实体变成不可用。
+            if self.poll_availability:  #这里改为默认轮询设备，小度一定要轮询，否则实体会变成不可用。
                 return
             try:
                 await self._device_connect(self.location)
@@ -430,12 +432,13 @@ class DlnaDmrEntity(MediaPlayerEntity):
 
         
         try:
-            if self._device.manufacturer == "Amlogic Corporation": #小讯R1音箱app常开dlna不支持
-                return
+            #if self._device.manufacturer == "Amlogic Corporation": #小讯R1音箱app常开dlna不支持 不注释会报错，但可以使用。
+            #    return
             do_ping = self.poll_availability or self.check_available
             await self._device.async_update(do_ping=do_ping)
-        except UpnpError as err:
-            _LOGGER.debug("Device unavailable: %r", err)
+        #except UpnpError as err:
+        except:
+            #_LOGGER.debug("Device unavailable: %r", err)
             await self._device_disconnect()
             return
         finally:
@@ -494,17 +497,21 @@ class DlnaDmrEntity(MediaPlayerEntity):
             # _LOGGER.debug("manufacturer: %s, media_duration:%s, media_position:%s", self._device.manufacturer, self.media_duration, self.media_position)
             # if self._device.manufacturer == "DuerOS" and self.media_duration != None and self.media_duration == self.media_position:
                 # self.async_media_stop()
-
             return STATE_PLAYING
         if self._device.transport_state in (
             TransportState.PAUSED_PLAYBACK,
             TransportState.PAUSED_RECORDING,
         ):
             return STATE_PAUSED
+            
+        
+        
         if self._device.transport_state == TransportState.VENDOR_DEFINED:
             # Unable to map this state to anything reasonable, so it's "Unknown"
-            return None        
-
+            if  self._device.manufacturer == "Amlogic Corporation": #小讯R1音箱app常开dlna设置在无状态时为idle
+                return STATE_IDLE
+            return None
+            
         return STATE_IDLE
 
     @property
