@@ -32,6 +32,7 @@
                 "data": {
                     "host": "\u4e3b\u673a"
                 },
+		"description": "选择要配置的设备或留空以输入 URL",
                 "title": "\u53d1\u73b0 DLNA DMR \u8bbe\u5907"
             }
         }
