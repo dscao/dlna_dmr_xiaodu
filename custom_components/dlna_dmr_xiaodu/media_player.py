@@ -381,10 +381,10 @@ class DlnaDmrEntity(MediaPlayerEntity):
                 ),
                 (device_registry.CONNECTION_UPNP, self._device.udn),
             },
-            identifiers={(DOMAIN, self.unique_id)},
+            #identifiers={(DOMAIN, self.unique_id)}, # 2023.8 只有且必须有connections或identifiers中的一项
             default_manufacturer=self._device.manufacturer,
             default_model=self._device.model_name,
-            default_name=self._device.name,
+            default_name=self._device.name.replace("\n",""),
         )
 
         # Update entity registry to link to the device
