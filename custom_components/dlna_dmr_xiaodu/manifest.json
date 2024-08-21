@@ -1,11 +1,14 @@
 {
   "domain": "dlna_dmr_xiaodu",
   "name": "DLNA For Xiaodu",
-  "config_flow": true,
-  "documentation": "https://www.home-assistant.io/integrations/dlna_dmr",
-  "requirements": ["async-upnp-client>=0.28.0"],
-  "dependencies": ["ssdp"],
   "after_dependencies": ["media_source"],
+  "codeowners": ["@StevenLooman", "@chishm","@dscao"],
+  "config_flow": true,
+  "dependencies": ["ssdp"],
+  "documentation": "https://www.home-assistant.io/integrations/dlna_dmr",
+  "loggers": ["async_upnp_client"],
+  "iot_class": "local_push",  
+  "requirements": ["async-upnp-client>=0.28.0"],  
   "ssdp": [
     {
       "deviceType": "urn:schemas-upnp-org:device:MediaRenderer:1",
@@ -19,9 +22,6 @@
       "deviceType": "urn:schemas-upnp-org:device:MediaRenderer:3",
       "st": "urn:schemas-upnp-org:device:MediaRenderer:3"
     }
-  ],
-  "codeowners": ["@StevenLooman", "@chishm","@dscao"],
-  "version": "2022.11.25",
-  "iot_class": "local_push",
-  "loggers": ["async_upnp_client"]
+  ],  
+  "version": "2024.7.19"  
 }

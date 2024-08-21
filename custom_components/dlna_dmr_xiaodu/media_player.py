@@ -377,9 +377,9 @@ class DlnaDmrEntity(MediaPlayerEntity):
             connections={
                 (
                     device_registry.CONNECTION_UPNP,
-                    self._device.profile_device.root_device.udn,
+                    self.location.replace(":","_").replace("/","_"),
                 ),
-                (device_registry.CONNECTION_UPNP, self._device.udn),
+                (device_registry.CONNECTION_UPNP, self.location.replace(":","_").replace("/","_")),
             },
             #identifiers={(DOMAIN, self.unique_id)}, # 2023.8 只有且必须有connections或identifiers中的一项
             default_manufacturer=self._device.manufacturer,
@@ -475,7 +475,7 @@ class DlnaDmrEntity(MediaPlayerEntity):
     @property
     def unique_id(self) -> str:
         """Report the UDN (Unique Device Name) as this entity's unique ID."""
-        return self.location
+        return self.location.replace(":","_").replace("/","_")
 
     @property
     def usn(self) -> str:
@@ -521,9 +521,9 @@ class DlnaDmrEntity(MediaPlayerEntity):
         Supported features may change as the device enters different states.
         """
         if not self._device:
-            return 0
+            return MediaPlayerEntityFeature(0)
 
-        supported_features = 0
+        supported_features = MediaPlayerEntityFeature(0)
 
         if self._device.has_volume_level:
             supported_features |= MediaPlayerEntityFeature.VOLUME_SET

@@ -161,7 +161,7 @@ class DlnaDmrFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         LOGGER.debug("async_step_unignore: user_input: %s", user_input)
         self._location = user_input["location"]
         assert self._location
-        await self.async_set_unique_id(self._location)
+        await self.async_set_unique_id(self._location.replace(":","_").replace("/","_"))
 
         # Find a discovery matching the unignored unique_id for a DMR device
         for dev_type in DmrDevice.DEVICE_TYPES:
@@ -211,7 +211,7 @@ class DlnaDmrFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 
         if not self._location:
             self._location = device.location
-            await self.async_set_unique_id(self._location)
+            await self.async_set_unique_id(self._location.replace(":","_").replace("/","_"))
 
         # Abort if already configured, but update the last-known location
         self._abort_if_unique_id_configured(
