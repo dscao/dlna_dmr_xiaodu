@@ -5,10 +5,9 @@ from __future__ import annotations
 # import xml.etree.ElementTree as etree
 # import re
 import os
+import shutil
 from urllib.parse import unquote
-
-
-
+from homeassistant.components.tts import DATA_TTS_MANAGER
 import asyncio
 from collections.abc import Awaitable, Callable, Coroutine, Sequence
 import contextlib
@@ -23,7 +22,7 @@ from async_upnp_client.profiles.dlna import DmrDevice, PlayMode, TransportState
 from async_upnp_client.utils import async_get_local_ip
 from didl_lite import didl_lite
 from typing_extensions import Concatenate, ParamSpec
-
+from homeassistant.helpers.network import get_url
 from homeassistant import config_entries
 from homeassistant.components import media_source, ssdp
 from homeassistant.components.media_player import (
@@ -34,9 +33,7 @@ from homeassistant.components.media_player import (
 )
 from homeassistant.components.media_player.const import (
     ATTR_MEDIA_EXTRA,
-    REPEAT_MODE_ALL,
-    REPEAT_MODE_OFF,
-    REPEAT_MODE_ONE,
+    RepeatMode,
 )
 from homeassistant.const import (
     CONF_DEVICE_ID,
@@ -489,14 +486,11 @@ class DlnaDmrEntity(MediaPlayerEntity):
             return STATE_OFF
         if self._device.transport_state is None:
             return STATE_ON
+
         if self._device.transport_state in (
             TransportState.PLAYING,
             TransportState.TRANSITIONING,
         ):
-            # Fix xiaodu can not stop automatically 但因小度不支持停止操作，并不能将状态变更为待机,，放弃修改。
-            # _LOGGER.debug("manufacturer: %s, media_duration:%s, media_position:%s", self._device.manufacturer, self.media_duration, self.media_position)
-            # if self._device.manufacturer == "DuerOS" and self.media_duration != None and self.media_duration == self.media_position:
-                # self.async_media_stop()
             return STATE_PLAYING
         if self._device.transport_state in (
             TransportState.PAUSED_PLAYBACK,
@@ -504,11 +498,8 @@ class DlnaDmrEntity(MediaPlayerEntity):
         ):
             return STATE_PAUSED
             
-        
-        
         if self._device.transport_state == TransportState.VENDOR_DEFINED:
-            # Unable to map this state to anything reasonable, so it's "Unknown"
-            if  self._device.manufacturer == "Amlogic Corporation": #小讯R1音箱app常开dlna设置在无状态时为idle
+            if self._device.manufacturer == "Amlogic Corporation":
                 return STATE_IDLE
             return None
             
@@ -600,9 +591,13 @@ class DlnaDmrEntity(MediaPlayerEntity):
 
     @catch_request_errors
     async def async_media_stop(self) -> None:
-        """Send stop command."""
-        assert self._device is not None
-        await self._device.async_stop()
+        """Send stop command."""  
+        if self._device:
+            try:
+                await self._device.async_stop()
+            except Exception as e:
+                _LOGGER.error("Error stopping device: %s", str(e))
+
 
     @catch_request_errors
     async def async_media_seek(self, position: int | float) -> None:
@@ -621,21 +616,24 @@ class DlnaDmrEntity(MediaPlayerEntity):
 
         didl_metadata: str | None = None
         title: str = ""
-
+        
         # If media is media_source, resolve it to url and MIME type, and maybe metadata
         if media_source.is_media_source_id(media_id):
             sourced_media = await media_source.async_resolve_media(self.hass, media_id)
             media_type = sourced_media.mime_type
             media_id = sourced_media.url
             _LOGGER.debug("sourced_media is %s", sourced_media)
+            _LOGGER.debug("media_id is %s", media_id)
             if sourced_metadata := getattr(sourced_media, "didl_metadata", None):
                 didl_metadata = didl_lite.to_xml_string(sourced_metadata).decode(
                     "utf-8"
                 )
                 title = sourced_metadata.title
 
+
         # If media ID is a relative URL, we serve it from HA.
         media_id = async_process_play_media_url(self.hass, media_id)
+        _LOGGER.debug("media_id is a relative URL: %s", media_id)
 
         extra: dict[str, Any] = kwargs.get(ATTR_MEDIA_EXTRA) or {}
         metadata: dict[str, Any] = extra.get("metadata") or {}
@@ -664,11 +662,78 @@ class DlnaDmrEntity(MediaPlayerEntity):
                 override_upnp_class=upnp_class,
                 meta_data=metadata,
             )
+            
+        # 只对小度设备进行特殊处理
+        if self._device.manufacturer == "DuerOS" and "tts_proxy" in media_id:
+            # 提取音频token
+            audio_token = media_id.split("/")[-1]
+            _LOGGER.debug("TTS audio token: %s", audio_token)
+            
+            # 获取TTS管理器
+            tts_manager = self.hass.data.get(DATA_TTS_MANAGER)
+            filename = None
+            
+            if tts_manager:
+                # 尝试从TTS管理器获取流对象
+                stream = getattr(tts_manager, 'token_to_stream', {}).get(audio_token)
+                
+                if stream:
+                    try:
+                        # 等待结果缓存完成
+                        cache = await getattr(stream, '_result_cache', None)
+                        if cache:
+                            filename = f"{getattr(cache, 'cache_key', 'unknown')}.{getattr(cache, 'extension', 'mp3')}".lower()
+                            _LOGGER.debug("Resolved TTS file: %s", filename)
+                    except Exception as e:
+                        _LOGGER.error("Error getting TTS cache: %s", str(e))
+            
+            if filename:
+                # 源路径和目标路径
+                source_path = self.hass.config.path("tts", filename)
+                dest_dir = self.hass.config.path("www", "tts")
+                os.makedirs(dest_dir, exist_ok=True)
+                dest_path = os.path.join(dest_dir, filename)
+                
+                # 新增：等待文件完全生成
+                max_retries = 60
+                retry_delay = 0.5  # 每次重试间隔0.5秒
+                file_ready = False
+                
+                for attempt in range(max_retries):
+                    # 检查文件是否存在且大小稳定
+                    if os.path.exists(source_path):
+                        current_size = os.path.getsize(source_path)
+                        await asyncio.sleep(0.1)  # 短暂等待
+                        new_size = os.path.getsize(source_path)
+                        
+                        if current_size == new_size and current_size > 0:
+                            file_ready = True
+                            break
+                        else:
+                            _LOGGER.debug("TTS file still growing, size %d → %d", current_size, new_size)
+                    else:
+                        _LOGGER.debug("TTS file not found, attempt %d/%d", attempt+1, max_retries)
+                    
+                    await asyncio.sleep(retry_delay)
+                
+                if file_ready:
+                    # 复制文件
+                    shutil.copy(source_path, dest_path)
+                    # 更新媒体ID为可公开访问的URL
+                    instance_url = get_url(self.hass)
+                    media_id = f"{instance_url}/local/tts/{filename}"
+                    _LOGGER.debug("TTS file ready and accessible at: %s", media_id)
+                    self.hass.async_create_task(self.async_media_stop())
+                else:
+                    _LOGGER.error("TTS file not ready after %d attempts, using proxy URL", max_retries)
+            else:
+                _LOGGER.error("Could not resolve TTS filename for token: %s", audio_token)
 
         # Stop current playing media
         if self._device.can_stop and self._device.manufacturer != "Amlogic Corporation": #小讯R1音箱app常开dlna使用stop命令报错
             await self.async_media_stop() 
-        
+            
+        _LOGGER.debug("will play media_id URL: %s", media_id)
         # Queue media
         await self._device.async_set_transport_uri(media_id, title, didl_metadata)
 
@@ -712,7 +777,7 @@ class DlnaDmrEntity(MediaPlayerEntity):
         """Enable/disable shuffle mode."""
         assert self._device is not None
 
-        repeat = self.repeat or REPEAT_MODE_OFF
+        repeat = self.repeat or RepeatMode.OFF
         potential_play_modes = SHUFFLE_PLAY_MODES[(shuffle, repeat)]
 
         valid_play_modes = self._device.valid_play_modes
@@ -739,12 +804,12 @@ class DlnaDmrEntity(MediaPlayerEntity):
             return None
 
         if play_mode == PlayMode.REPEAT_ONE:
-            return REPEAT_MODE_ONE
+            return RepeatMode.ONE
 
         if play_mode in (PlayMode.REPEAT_ALL, PlayMode.RANDOM):
-            return REPEAT_MODE_ALL
+            return RepeatMode.ALL
 
-        return REPEAT_MODE_OFF
+        return RepeatMode.OFF
 
     @catch_request_errors
     async def async_set_repeat(self, repeat: str) -> None:
