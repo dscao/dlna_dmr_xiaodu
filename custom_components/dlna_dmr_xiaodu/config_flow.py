@@ -286,7 +286,7 @@ class DlnaDmrFlowHandler(ConfigFlow, domain=DOMAIN):
             assert isinstance(self._location, str)
 
         # self._udn = discovery_info.ssdp_udn
-        await self.async_set_unique_id(self._udn, raise_on_progress=abort_if_configured)
+        await self.async_set_unique_id(self._location.replace(":","_").replace("/","_"), raise_on_progress=abort_if_configured)
 
         self._device_type = discovery_info.ssdp_nt or discovery_info.ssdp_st
         self._name = (
